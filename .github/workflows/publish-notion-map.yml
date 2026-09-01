@@ -1,0 +1,53 @@
+name: Publish notion map
+
+# 每小時從 Notion 讀一次補充內容清單，產生 notion-map.json，發布到 GitHub Pages。
+# 前端在瀏覽器裡直接 fetch 那個網址，所以新增新聞不需要重新部署前端。
+on:
+  schedule:
+    # 每小時的第 17 分執行。避開整點，GitHub 整點時排程壅塞會被延後。
+    - cron: '17 * * * *'
+  # 在 Actions 分頁手動按一下就立刻更新，不用等排程。
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Pages 一次只能有一個部署在進行，排隊而不是取消，避免手動觸發把排程的結果蓋掉。
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 產生 notion-map.json
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ vars.NOTION_DATABASE_ID }}
+          NOTION_ID_PROPERTY: ${{ vars.NOTION_ID_PROPERTY }}
+          OUT: ${{ github.workspace }}/dist/notion-map.json
+        run: node script/fetch-notion-map.mjs
+
+      - name: 放一頁說明，讓 Pages 根目錄不是 404
+        run: cp public/index.html dist/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

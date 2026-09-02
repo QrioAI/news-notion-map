@@ -13,6 +13,7 @@ const VERSION_DATA_SOURCE = '2025-09-03';
 const TOKEN = process.env.NOTION_TOKEN;
 const DATABASE_ID = process.env.NOTION_DATABASE_ID;
 const ID_PROPERTY = process.env.NOTION_ID_PROPERTY || 'News ID';
+const LANG_PROPERTY = process.env.NOTION_LANG_PROPERTY || 'Language';
 const OUT = process.env.OUT || path.join(process.cwd(), 'dist-notion-map', 'notion-map.json');
 
 function die(message, hint) {
@@ -93,11 +94,13 @@ async function resolveQueryTarget() {
   if (!ok) die(`讀取 database 失敗（HTTP ${status}）：${json.message || ''}`);
 
   const properties = Object.keys(json.properties || {});
-  if (properties.length && !properties.includes(ID_PROPERTY)) {
-    die(
-      `database 裡沒有叫「${ID_PROPERTY}」的欄位，現有欄位是 ${properties.join('、')}。`,
-      '改 Notion 的欄位名稱，或改 NOTION_ID_PROPERTY 這個變數。',
-    );
+  for (const [name, envName] of [[ID_PROPERTY, 'NOTION_ID_PROPERTY'], [LANG_PROPERTY, 'NOTION_LANG_PROPERTY']]) {
+    if (properties.length && !properties.includes(name)) {
+      die(
+        `database 裡沒有叫「${name}」的欄位，現有欄位是 ${properties.join('、')}。`,
+        `改 Notion 的欄位名稱，或改 ${envName} 這個變數。`,
+      );
+    }
   }
 
   const dataSourceId = json.data_sources?.[0]?.id;
@@ -129,38 +132,49 @@ console.log(`讀到 ${rows.length} 列`);
 
 const map = {};
 let missingId = 0;
+let missingLang = 0;
 let notPublished = 0;
 const duplicated = [];
 
 for (const row of rows) {
   const newsId = readProperty(row.properties?.[ID_PROPERTY]).trim();
+  const lang = readProperty(row.properties?.[LANG_PROPERTY]).trim();
   if (!newsId) {
     missingId += 1;
+    continue;
+  }
+  if (!lang) {
+    missingLang += 1;
     continue;
   }
   if (!row.public_url) {
     notPublished += 1;
     continue;
   }
-  if (map[newsId]) duplicated.push(newsId);
-  map[newsId] = row.public_url;
+  if (map[newsId]?.[lang]) duplicated.push(`${newsId} ${lang}`);
+  (map[newsId] ||= {})[lang] = row.public_url;
 }
 
-// 鍵排序，讓每次輸出的位元組一致，沒有實際變動時 git 就看得出來沒變。
-const sorted = Object.fromEntries(Object.keys(map).sort().map((k) => [k, map[k]]));
-const count = Object.keys(sorted).length;
+// 兩層都排序，讓每次輸出的位元組一致，沒有實際變動時 git 就看得出來沒變。
+const sorted = {};
+for (const newsId of Object.keys(map).sort()) {
+  sorted[newsId] = Object.fromEntries(Object.keys(map[newsId]).sort().map((l) => [l, map[newsId][l]]));
+}
+const newsCount = Object.keys(sorted).length;
+const pageCount = Object.values(sorted).reduce((n, langs) => n + Object.keys(langs).length, 0);
 
-console.log(`可用對照 ${count} 筆，沒填 ${ID_PROPERTY} ${missingId} 筆，還沒發布 ${notPublished} 筆`);
+console.log(`可用對照 ${newsCount} 則新聞、共 ${pageCount} 個語言版本`);
+console.log(`沒填 ${ID_PROPERTY} ${missingId} 筆，沒填 ${LANG_PROPERTY} ${missingLang} 筆，還沒發布 ${notPublished} 筆`);
 if (duplicated.length) {
-  console.log(`注意：這些 id 在 Notion 有超過一列，只會留最後一列：${[...new Set(duplicated)].join('、')}`);
+  console.log(`注意：同一個新聞編號的同一個語言有超過一列，只會留最後一列：${[...new Set(duplicated)].join('、')}`);
 }
 
 // 讀到零筆通常代表權限或設定壞了，不是真的沒有補充內容。
 // 這種時候寧可讓流程失敗，也不要把一份空的對照表發布出去，把所有連結一次清空。
-if (count === 0) {
+if (pageCount === 0) {
   die(
     '一筆可用的對照都沒有，不發布。',
-    '確認 Notion 那邊的頁面有填 News ID，而且已經按過「共用」→「發布到網頁」。',
+    `確認 Notion 那邊的頁面有填 ${ID_PROPERTY} 與 ${LANG_PROPERTY}，而且已經按過「共用」→「發布到網頁」。`,
   );
 }
 

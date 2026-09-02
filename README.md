@@ -10,15 +10,20 @@
 https://qrioai.github.io/news-notion-map/notion-map.json
 ```
 
-內容長這樣：
+內容長這樣，第一層是新聞編號，第二層是語言：
 
 ```json
 {
-  "652": "https://flicker-scissor-072.notion.site/3ce3e4bfe89c80eaaea6c009f3a62bfe"
+  "652": {
+    "en": "https://flicker-scissor-072.notion.site/xxx",
+    "zh-TW": "https://flicker-scissor-072.notion.site/yyy"
+  }
 }
 ```
 
-只包含已經填好 News ID、而且已經發布到網頁的那些頁面。沒補充內容的新聞不會出現在裡面。
+只包含已經填好 News ID 與 Language、而且已經發布到網頁的那些頁面。沒教學素材的新聞不會出現在裡面。
+
+前端自己決定拿哪一個語言，以及找不到時退回哪一個。這份檔案只說有哪些版本存在。
 
 ## 建立步驟
 
@@ -33,6 +38,7 @@ repo 要設成 public。私有 repo 的 GitHub Pages 需要 Team 以上方案，
 | Secrets | `NOTION_TOKEN` | Notion integration 的 Internal Integration Secret，`ntn_` 開頭 |
 | Variables | `NOTION_DATABASE_ID` | database 網址裡問號前面那 32 碼 |
 | Variables | `NOTION_ID_PROPERTY` | 選填，預設 `News ID` |
+| Variables | `NOTION_LANG_PROPERTY` | 選填，預設 `Language` |
 
 token 一定要放 Secrets 那一頁，不要放 Variables，Variables 的值在執行紀錄裡看得到。
 
@@ -42,7 +48,9 @@ token 一定要放 Secrets 那一頁，不要放 Variables，Variables 的值在
 
 ## 編輯的操作
 
-在 Notion 的 News For Kids Teaching Prompt 建一頁，填 News ID，寫內容，然後按「共用」→「發布到網頁」。最多一小時後前端就會出現連結。等不及就請人到 Actions 分頁按一下 Run workflow。
+在 Notion 的 News For Kids Teaching Prompt 建一頁，填 News ID 與 Language，寫內容，然後按「共用」→「發布到網頁」。最多一小時後前端就會出現連結。等不及就請人到 Actions 分頁按一下 Run workflow。
+
+同一則新聞的兩個語言版本是兩列，News ID 都填一樣的數字，Language 各選各的。Language 用 Select 欄位，選項就寫站上的語言代碼：`en`、`zh-TW`、`zh-CN`、`ja`。
 
 沒有按發布到網頁的頁面不會被收進來，這是刻意的，草稿不會外流。
 
@@ -60,7 +68,7 @@ NOTION_TOKEN=ntn_xxx NOTION_DATABASE_ID=xxx node script/fetch-notion-map.mjs
 
 輸出的鍵會排序，所以沒有實際變動時檔案位元組一致。
 
-同一個 News ID 在 Notion 有多列時只留最後一列，執行紀錄會印出是哪些 id。
+同一個 News ID 加同一個 Language 在 Notion 有多列時只留最後一列，執行紀錄會印出是哪幾組。沒填 Language 的列會被跳過並計入統計。
 
 ## 前端怎麼用
 

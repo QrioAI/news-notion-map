@@ -14,6 +14,9 @@ const TOKEN = process.env.NOTION_TOKEN;
 const DATABASE_ID = process.env.NOTION_DATABASE_ID;
 const ID_PROPERTY = process.env.NOTION_ID_PROPERTY || 'News ID';
 const LANG_PROPERTY = process.env.NOTION_LANG_PROPERTY || 'Language';
+const STATUS_PROPERTY = process.env.NOTION_STATUS_PROPERTY || 'Status';
+// 只有這個狀態的素材會進清單。其他狀態一律不寫出去，網址也就不會外流。
+const READY_STATUS = process.env.NOTION_READY_STATUS || 'Publish';
 const OUT = process.env.OUT || path.join(process.cwd(), 'dist-notion-map', 'notion-map.json');
 
 function die(message, hint) {
@@ -64,6 +67,8 @@ function readProperty(property) {
       return property.number == null ? '' : String(property.number);
     case 'select':
       return property.select?.name || '';
+    case 'status':
+      return property.status?.name || '';
     case 'url':
       return property.url || '';
     case 'unique_id': {
@@ -94,7 +99,12 @@ async function resolveQueryTarget() {
   if (!ok) die(`讀取 database 失敗（HTTP ${status}）：${json.message || ''}`);
 
   const properties = Object.keys(json.properties || {});
-  for (const [name, envName] of [[ID_PROPERTY, 'NOTION_ID_PROPERTY'], [LANG_PROPERTY, 'NOTION_LANG_PROPERTY']]) {
+  const required = [
+    [ID_PROPERTY, 'NOTION_ID_PROPERTY'],
+    [LANG_PROPERTY, 'NOTION_LANG_PROPERTY'],
+    [STATUS_PROPERTY, 'NOTION_STATUS_PROPERTY'],
+  ];
+  for (const [name, envName] of required) {
     if (properties.length && !properties.includes(name)) {
       die(
         `database 裡沒有叫「${name}」的欄位，現有欄位是 ${properties.join('、')}。`,
@@ -133,6 +143,7 @@ console.log(`讀到 ${rows.length} 列`);
 const map = {};
 let missingId = 0;
 let missingLang = 0;
+let notReady = 0;
 let notPublished = 0;
 const duplicated = [];
 
@@ -145,6 +156,10 @@ for (const row of rows) {
   }
   if (!lang) {
     missingLang += 1;
+    continue;
+  }
+  if (readProperty(row.properties?.[STATUS_PROPERTY]).trim() !== READY_STATUS) {
+    notReady += 1;
     continue;
   }
   if (!row.public_url) {
@@ -164,7 +179,10 @@ const newsCount = Object.keys(sorted).length;
 const pageCount = Object.values(sorted).reduce((n, langs) => n + Object.keys(langs).length, 0);
 
 console.log(`可用對照 ${newsCount} 則新聞、共 ${pageCount} 個語言版本`);
-console.log(`沒填 ${ID_PROPERTY} ${missingId} 筆，沒填 ${LANG_PROPERTY} ${missingLang} 筆，還沒發布 ${notPublished} 筆`);
+console.log(
+  `沒填 ${ID_PROPERTY} ${missingId} 筆，沒填 ${LANG_PROPERTY} ${missingLang} 筆，` +
+    `${STATUS_PROPERTY} 不是 ${READY_STATUS} ${notReady} 筆，還沒發布 ${notPublished} 筆`,
+);
 if (duplicated.length) {
   console.log(`注意：同一個新聞編號的同一個語言有超過一列，只會留最後一列：${[...new Set(duplicated)].join('、')}`);
 }
@@ -174,7 +192,8 @@ if (duplicated.length) {
 if (pageCount === 0) {
   die(
     '一筆可用的對照都沒有，不發布。',
-    `確認 Notion 那邊的頁面有填 ${ID_PROPERTY} 與 ${LANG_PROPERTY}，而且已經按過「共用」→「發布到網頁」。`,
+    `確認 Notion 那邊的頁面有填 ${ID_PROPERTY} 與 ${LANG_PROPERTY}、${STATUS_PROPERTY} 是 ${READY_STATUS}，` +
+      '而且已經按過「共用」→「發布到網頁」。',
   );
 }
 

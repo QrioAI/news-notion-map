@@ -21,12 +21,12 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+# 拆成「建置」和「部署」兩個 job（GitHub 官方範本的寫法）。
+# 原本寫在同一個 job 時，上傳完約 1 秒就部署，偶爾會查不到剛上傳的檔案
+# （No artifacts named "github-pages" were found），分開後兩步之間會多隔一段時間。
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
 
@@ -49,5 +49,13 @@ jobs:
         with:
           path: dist
 
+  deploy:
+    # 等 build 成功才跑；build 失敗就不部署，網站維持上一次的內容。
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
       - id: deploy
         uses: actions/deploy-pages@v5
